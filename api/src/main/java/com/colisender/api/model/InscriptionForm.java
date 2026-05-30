@@ -7,8 +7,8 @@ public class InscriptionForm {
     private String nom;
     private String email;
     private String motDePasse;
-    private String numeroPrincipal;   // 💡 Modifié : camelCase
-    private String numeroSecondaire;  // 💡 Modifié : camelCase
+    private String numeroPrincipal;   
+    private String numeroSecondaire;  
     private MultipartFile photoRectoCNI;
     private MultipartFile photoVersoCNI;
     private MultipartFile photoSelfie;

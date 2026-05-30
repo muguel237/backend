@@ -38,7 +38,14 @@ public class Utilisateur {
     @Column(name = "date_creation", nullable = false, updatable = false)
     private LocalDateTime dateCreation = LocalDateTime.now();
 
-    // Getters et Setters manuels
+    // 💡 AJOUT : Ces deux colonnes manquantes pour faire fonctionner l'OTP du mot de passe oublié
+    @Column(name = "password_reset_otp")
+    private String passwordResetOtp;
+
+    @Column(name = "otp_expiry_date")
+    private LocalDateTime otpExpiryDate;
+
+    // --- GETTERS ET SETTERS EXISTANTS ---
     public UUID getIdUtilisateur() { return idUtilisateur; }
     public void setIdUtilisateur(UUID idUtilisateur) { this.idUtilisateur = idUtilisateur; }
 
@@ -68,4 +75,11 @@ public class Utilisateur {
 
     public LocalDateTime getDateCreation() { return dateCreation; }
     public void setDateCreation(LocalDateTime dateCreation) { this.dateCreation = dateCreation; }
+
+    // --- 💡 AJOUT : Getters et Setters pour l'OTP ---
+    public String getPasswordResetOtp() { return passwordResetOtp; }
+    public void setPasswordResetOtp(String passwordResetOtp) { this.passwordResetOtp = passwordResetOtp; }
+
+    public LocalDateTime getOtpExpiryDate() { return otpExpiryDate; }
+    public void setOtpExpiryDate(LocalDateTime otpExpiryDate) { this.otpExpiryDate = otpExpiryDate; }
 }
