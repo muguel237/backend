@@ -2,6 +2,7 @@ package com.colisender.api.controller;
 
 import com.colisender.api.model.*;
 import com.colisender.api.repository.*;
+import com.colisender.api.service.VerificationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -23,7 +24,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/auth")
-@CrossOrigin(origins = "*") 
+@CrossOrigin(origins = "http://localhost:5173", allowCredentials = "true")
 public class AuthController {
 
     @Autowired
@@ -34,141 +35,114 @@ public class AuthController {
 
     @Autowired
     private JavaMailSender mailSender;
-    private static final String UPLOAD_DIR = System.getProperty("user.home") + "/colisender_uploads/";
 
-    // Stockage temporaire en mémoire des codes OTP en attente de validation (Email -> Code)
+    @Autowired
+    private VerificationService verificationService;
+
+    private static final String UPLOAD_DIR = System.getProperty("user.home") + "/colisender_uploads/";
     private final Map<String, String> tempOtpStore = new HashMap<>();
 
-    /**
-     * ÉTAPE 1 : Génération d'un OTP et envoi réel par email
-     */
     @PostMapping("/send-otp")
     public ResponseEntity<?> sendOtp(@RequestBody Map<String, String> request) {
         String email = request.get("email");
-        
-        // Vérification si l'email existe déjà en base de données
-        if (utilisateurRepository.existsByEmail(email)) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(Map.of("message", "Cet email possède déjà un compte."));
+        if (email == null || email.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("message", "Email manquant."));
         }
 
-        // Génération d'un code OTP aléatoire à 6 chiffres
-        Random random = new Random();
-        String realOtp = String.format("%06d", random.nextInt(1000000));
+        String normalizedEmail = email.toLowerCase().trim();
+        String otp = String.format("%06d", new Random().nextInt(1000000));
         
-        // Sauvegarde temporaire du code lié à cet email
-        tempOtpStore.put(email, realOtp);
+        tempOtpStore.put(normalizedEmail, otp);
+        System.out.println("DEBUG - OTP généré pour " + normalizedEmail + " : " + otp);
 
-        try {
-            // Configuration de l'email sortant
-            SimpleMailMessage message = new SimpleMailMessage();
-            message.setFrom("ton_adresse_gmail@gmail.com"); // À aligner avec ton application.properties
-            message.setTo(email);
-            message.setSubject("Colisender - Ton code de vérification");
-            message.setText("Bonjour,\n\nVoici ton code de vérification à usage unique pour finaliser ton inscription sur Colisender : " 
-                            + realOtp + "\n\nCe code est valable pendant 2 minutes.");
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setTo(normalizedEmail);
+        message.setSubject("Votre code de vérification ColiSender");
+        message.setText("Votre code OTP est : " + otp);
+        mailSender.send(message);
 
-            // Envoi de l'email via le serveur SMTP configuré
-            mailSender.send(message);
-            System.out.println("[SMTP] Code OTP envoyé avec succès à : " + email);
-
-            return ResponseEntity.ok(Map.of(
-                "message", "Le code de vérification a été envoyé à votre adresse email.",
-                "expiresInSeconds", 120
-            ));
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("message", "Échec de l'envoi de l'email. Vérifiez vos identifiants SMTP ou votre connexion."));
-        }
+        return ResponseEntity.ok(Map.of("message", "OTP envoyé avec succès."));
     }
 
-    /**
-     * ÉTAPE 2 : Validation du code saisi par l'utilisateur sur l'interface React
-     */
     @PostMapping("/verify-otp")
     public ResponseEntity<?> verifyOtp(@RequestBody Map<String, String> request) {
-        String email = request.get("email");
-        String code = request.get("code");
+        String email = request.get("email").toLowerCase().trim();
+        String otp = request.get("otp");
+        String storedOtp = tempOtpStore.get(email);
 
-        String validCode = tempOtpStore.get(email);
-        if (validCode != null && validCode.equals(code)) {
-            return ResponseEntity.ok(Map.of("message", "OTP valide"));
+        System.out.println("DEBUG - Vérification OTP pour " + email + " | Reçu: [" + otp + "] vs Stocké: [" + storedOtp + "]");
+
+        if (storedOtp != null && storedOtp.equals(otp)) {
+            return ResponseEntity.ok(Map.of("message", "OTP valide."));
+        } else {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Code OTP incorrect."));
         }
-
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(Map.of("message", "Code OTP incorrect ou expiré."));
     }
 
-    /**
-     * ÉTAPE 3 : Inscription complète, écriture des images et liaisons BDD (UUID)
-     */
     @PostMapping(value = "/register", consumes = {"multipart/form-data"})
-    @Transactional // Annule tout en base de données si l'écriture d'un fichier échoue en cours de route
+    @Transactional
     public ResponseEntity<?> register(@ModelAttribute InscriptionForm form) {
+        String email = form.getEmail().toLowerCase().trim();
+        
+        // La vérification OTP est maintenant faite via /verify-otp avant d'appeler /register
         try {
-            // Sécurité : double vérification de l'email avant insertion
-            if (utilisateurRepository.existsByEmail(form.getEmail())) {
+            // 1. OCR & Vérification nom
+            String ocrResult = verificationService.extraireNom(form.getPhotoRectoCNI());
+            String nomOcrNettoye = nettoyerTexte(ocrResult);
+            String nomSaisiNettoye = nettoyerTexte(form.getNom());
+
+            if (!nomOcrNettoye.contains(nomSaisiNettoye)) {
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(Map.of("message", "Cet email est déjà utilisé."));
+                        .body(Map.of("message", "Le nom sur la CNI ne correspond pas."));
             }
 
-        
+            // 2. Création utilisateur
             Utilisateur u = new Utilisateur();
             u.setNom(form.getNom());
             u.setPrenom(form.getPrenom());
-            u.setEmail(form.getEmail());
-            u.setMotDePasse(form.getMotDePasse()); 
-u.setNumeroPrincipal(form.getNumeroPrincipal()); 
-u.setNumeroSecondaire(form.getNumeroSecondaire());
+            u.setEmail(email);
+            u.setMotDePasse(form.getMotDePasse());
+            u.setNumeroPrincipal(form.getNumeroPrincipal());
+            u.setNumeroSecondaire(form.getNumeroSecondaire());
             u.setStatusCompte(StatutCompteEnum.EN_ATTENTE);
-
-            // La base de données PostgreSQL génère ici automatiquement le UUID id_utilisateur
             Utilisateur savedUser = utilisateurRepository.save(u);
 
-            // 2. Écriture physique des fichiers images reçus sur le disque dur
+            // 3. Sauvegarde des fichiers
             String pathRecto = saveToDisk(form.getPhotoRectoCNI(), "recto_");
             String pathVerso = saveToDisk(form.getPhotoVersoCNI(), "verso_");
             String pathSelfie = saveToDisk(form.getPhotoSelfie(), "selfie_");
 
-            // 3. Création de la ligne correspondante dans verification_identite
             VerificationIdentite v = new VerificationIdentite();
-            v.setIdUtilisateur(savedUser.getIdUtilisateur()); // Clé étrangère basée sur le UUID généré au-dessus !
+            v.setIdUtilisateur(savedUser.getIdUtilisateur());
             v.setPhotoRectoCNI(pathRecto);
             v.setPhotoVersoCNI(pathVerso);
             v.setPhotoSelfie(pathSelfie);
             v.setStatutVerification(StatutVerifEnum.EN_ATTENTE);
-
             verificationIdentiteRepository.save(v);
 
-            // Inscription terminée, on supprime l'OTP de la mémoire volatile
-            tempOtpStore.remove(form.getEmail());
+            // Nettoyage de l'OTP après inscription réussie
+            tempOtpStore.remove(email);
+            
+            return ResponseEntity.ok(Map.of("message", "Inscription réussie !"));
 
-            return ResponseEntity.ok(Map.of("message", "Inscription complète réussie ! Compte en attente de vérification."));
-
-        } catch (IOException e) {
+        } catch (Exception e) {
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("message", "Erreur technique lors du traitement ou du stockage des images."));
+                    .body(Map.of("message", "Erreur serveur : " + e.getMessage()));
         }
     }
 
-    /**
-     * Méthode utilitaire privée : Copie un fichier MultipartFile vers le stockage local
-     */
+    private String nettoyerTexte(String texte) {
+        return (texte == null) ? "" : texte.toUpperCase().replaceAll("[^A-Z]", "");
+    }
+
     private String saveToDisk(MultipartFile file, String prefix) throws IOException {
         if (file == null || file.isEmpty()) return null;
-
         File directory = new File(UPLOAD_DIR);
-        if (!directory.exists()) {
-            directory.mkdirs(); // Crée le dossier "colisender_uploads" s'il n'existe pas encore
-        }
-
-        // Création d'un nom de fichier unique pour éviter les écrasements (prefix + UUID + nom original)
+        if (!directory.exists()) directory.mkdirs();
         String fileName = prefix + UUID.randomUUID().toString() + "_" + file.getOriginalFilename();
         Path filePath = Paths.get(UPLOAD_DIR + fileName);
         Files.write(filePath, file.getBytes());
-
-        return filePath.toString(); // Renvoie le chemin absolu du fichier à stocker dans PostgreSQL
+        return filePath.toString();
     }
 }

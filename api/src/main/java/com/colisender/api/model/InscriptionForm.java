@@ -11,12 +11,14 @@ public class InscriptionForm {
     private String numeroSecondaire;  
     private MultipartFile photoRectoCNI;
     private MultipartFile photoVersoCNI;
+    private String otp;
     private MultipartFile photoSelfie;
 
     // Getters et Setters
     public String getPrenom() { return prenom; }
     public void setPrenom(String prenom) { this.prenom = prenom; }
-
+public String getOtp() { return otp; }
+    public void setOtp(String otp) { this.otp = otp; }
     public String getNom() { return nom; }
     public void setNom(String nom) { this.nom = nom; }
 
