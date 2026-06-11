@@ -111,7 +111,7 @@ public class AuthController {
             message.setSubject("Votre code de vérification ColiSender");
             message.setText(
                 "Bonjour,\n\nVotre code OTP est : " + otpEnClair +
-                "\n\nCe code est valable pendant 10 minutes.\n\nL'équipe Colisender."
+                "\n\nCe code est valable pendant 2 minutes.\n\nL'équipe Colisender."
             );
             mailSender.send(message);
         } catch (Exception e) {
@@ -259,46 +259,60 @@ public class AuthController {
     // POST /api/auth/login
     // Corps JSON : { "email": "user@gmail.com", "motDePasse": "MonMotDePasse123" }
     // =========================================================================
-    @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody Map<String, String> request) {
-        String email    = request.get("email").toLowerCase().trim();
-        String motDePasse = request.get("motDePasse");
+// =========================================================================
+//   @PostMapping("/login")
+// public ResponseEntity<?> login(@RequestBody Map<String, Object> request) {
+//     // 1. Log : Ce qu'on reçoit du client
+//     System.out.println("DEBUG LOGIN - Corps reçu : " + request);
 
-        Optional<Utilisateur> userOpt = utilisateurRepository.findByEmail(email);
+//     String email = request.get("email") != null ? request.get("email").toString() : null;
+    
+//     String motDePasse = null;
+//     if (request.get("mot_de_passe") != null) motDePasse = request.get("mot_de_passe").toString();
+//     else if (request.get("motDePasse") != null) motDePasse = request.get("motDePasse").toString();
+//     else if (request.get("password") != null) motDePasse = request.get("password").toString();
 
-        // Message générique pour ne pas révéler si l'email existe
-        if (userOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("message", "Email ou mot de passe incorrect."));
-        }
+//     // 2. Validation
+//     if (email == null || motDePasse == null || motDePasse.isEmpty()) {
+//         System.out.println("DEBUG LOGIN - ERREUR : Champs vides");
+//         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+//                 .body(Map.of("error", "CHAMP_MANQUANT", "message", "Veuillez remplir tous les champs."));
+//     }
 
-        Utilisateur u = userOpt.get();
+//     // 3. Recherche
+//     Optional<Utilisateur> userOpt = utilisateurRepository.findByEmail(email.toLowerCase().trim());
+    
+//     if (userOpt.isEmpty()) {
+//         System.out.println("DEBUG LOGIN - ERREUR : Email non trouvé [" + email + "]");
+//         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+//                 .body(Map.of("error", "EMAIL_INCONNU", "message", "Aucun compte associé à cet email."));
+//     }
 
-        // Vérifier que le compte est actif
-        if (u.getStatusCompte() != StatutCompteEnum.ACTIF) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("message", "Compte non actif. Finalisez votre inscription."));
-        }
+//     Utilisateur u = userOpt.get();
+//     System.out.println("DEBUG LOGIN - Utilisateur trouvé : " + u.getEmail() + " | Statut : " + u.getStatusCompte());
 
-        // Comparer le mot de passe saisi avec le hash BCrypt stocké en BD
-        boolean motDePasseCorrect = passwordEncoder.matches(motDePasse, u.getMotDePasse());
+//     // 4. Statut
+//     if (u.getStatusCompte() != StatutCompteEnum.ACTIF) {
+//         System.out.println("DEBUG LOGIN - ERREUR : Statut non actif pour " + u.getEmail());
+//         return ResponseEntity.status(HttpStatus.FORBIDDEN)
+//                 .body(Map.of("error", "COMPTE_NON_ACTIF", "message", "Le compte est en attente ou désactivé."));
+//     }
+    
+//     // 5. Comparaison Mdp
+//     boolean estValide = passwordEncoder.matches(motDePasse, u.getMotDePasse());
+//     System.out.println("DEBUG LOGIN - Comparaison mot de passe :");
+//     System.out.println("    Saisi : [" + motDePasse + "]");
+//     System.out.println("    Hash en base : [" + u.getMotDePasse() + "]");
+//     System.out.println("    Résultat matches() : " + estValide);
 
-        if (!motDePasseCorrect) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("message", "Email ou mot de passe incorrect."));
-        }
+//     if (!estValide) {
+//         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+//                 .body(Map.of("error", "MOT_DE_PASSE_INCORRECT", "message", "Le mot de passe saisi est incorrect."));
+//     }
 
-        // Connexion réussie — renvoyer les infos utiles (sans le mot de passe)
-        return ResponseEntity.ok(Map.of(
-                "message",    "Connexion réussie.",
-                "userId",     u.getIdUtilisateur().toString(),
-                "email",      u.getEmail(),
-                "nom",        u.getNom(),
-                "prenom",     u.getPrenom(),
-                "statusCompte", u.getStatusCompte().toString()
-        ));
-    }
-
+//     System.out.println("DEBUG LOGIN - Succès pour : " + u.getEmail());
+//     return ResponseEntity.ok(Map.of("message", "Connexion réussie.", "userId", u.getIdUtilisateur()));
+// }
     // =========================================================================
     // MÉTHODES UTILITAIRES PRIVÉES
     // =========================================================================
